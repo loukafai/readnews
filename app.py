@@ -41,12 +41,14 @@ def start_full_crawler(target_url):
         date_match = re.search(r'(\d{4}-\d{2}/\d{2})', target_url)
         date_id = date_match.group(1).replace('-', '').replace('/', '') if date_match else "Archive"
 
-        # HTML 模板
+        # HTML 模板 - 加入來源網址的 CSS
         html_start = f"""<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
         <style>
             body {{ font-family: sans-serif; line-height: 1.8; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f4; }}
-            .article-card {{ background: white; padding: 30px; margin-bottom: 30px; border-radius: 8px; shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-            .news-title {{ color: #aa0000; font-size: 1.8em; font-weight: bold; }}
+            .article-card {{ background: white; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            .news-title {{ color: #aa0000; font-size: 1.8em; font-weight: bold; margin-bottom: 10px; }}
+            .source-url {{ background: #f9f9f9; padding: 10px; border-radius: 4px; font-size: 0.85em; color: #666; margin-bottom: 20px; border: 1px solid #eee; word-break: break-all; }}
+            .source-url a {{ color: #0056b3; text-decoration: none; }}
             .news-image {{ max-width: 100%; display: block; margin: 20px auto; border-radius: 4px; }}
             #toc {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ddd; }}
         </style></head><body><h1>澳門日報合輯 ({date_id})</h1><div id="toc"><h3>📋 目錄</h3>"""
@@ -80,7 +82,19 @@ def start_full_crawler(target_url):
 
                 anchor_id = f"news_{i}"
                 toc_html += f'<a href="#{anchor_id}" style="display:block;margin:5px 0;text-decoration:none;color:#0056b3;">{i+1}. {final_title}</a>'
-                articles_body += f'<div class="article-card" id="{anchor_id}"><div class="news-title">{final_title}</div><hr>{imgs_html}<div>{content_html}</div></div>'
+                
+                # --- 修正處：加入來源連結區塊 ---
+                articles_body += f"""
+                <div class="article-card" id="{anchor_id}">
+                    <div class="news-title">{final_title}</div>
+                    <div class="source-url">
+                        <b>🔗 來源連結：</b><a href="{link}" target="_blank">{link}</a>
+                    </div>
+                    <hr>
+                    {imgs_html}
+                    <div class="content-body">{content_html}</div>
+                </div>
+                """
                 
                 progress_bar.progress((i + 1) / total)
                 time.sleep(0.1)
@@ -94,33 +108,28 @@ def start_full_crawler(target_url):
         st.error(f"崩潰: {e}")
         return None
 
-
-
 # --- 1. 時間處理 (UTC+8) ---
-utc_now = datetime.datetime.utcnow()
-local_now = utc_now + datetime.timedelta(hours=8)
+# 注意：Streamlit Cloud 通常運行在 UTC 時間
+local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
 today = local_now.date()
 formatted_date = today.strftime("%Y-%m/%d")
 today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
 
 # --- 2. UI 介面 ---
-st.title("🇲🇴 澳門日報全版面下載器 v0.3")
-st.caption(f"📅 伺服器偵測日期：{today} (UTC+8)")
+st.title("🇲🇴 澳門日報全版面下載器 v0.4")
+st.caption(f"📅 當前時間：{local_now.strftime('%Y-%m-%d %H:%M:%S')} (UTC+8)")
 
-# 建立按鈕欄位
 col1, col2 = st.columns(2)
 target_url = "" 
 trigger_start = False 
 
 with col1:
-    # 使用大紅色的按鈕吸引注意
     if st.button("🔴 下載當天新聞", type="primary", use_container_width=True):
         target_url = today_url
         trigger_start = True
 
 with col2:
-    # 讓用戶也可以手動輸入其他日期或版面
-    manual_url = st.text_input("輸入其他版面網址:", placeholder="https://...", label_visibility="collapsed")
+    manual_url = st.text_input("或輸入其他版面網址:", placeholder="https://...", label_visibility="collapsed")
     if st.button("🔍 開始分析手動網址", use_container_width=True):
         target_url = manual_url
         trigger_start = True
@@ -129,17 +138,16 @@ with col2:
 if trigger_start:
     if target_url:
         with st.spinner(f'正在爬取: {target_url}'):
-            # 這裡調用你之前的 start_full_crawler 函數
             result_html = start_full_crawler(target_url)
             
             if result_html:
-                st.success(f"✅ {today} 報紙生成完成！")
+                st.success(f"✅ 生成完成！")
                 st.balloons()
                 
                 st.download_button(
                     label="💾 點我下載 HTML 存檔",
                     data=result_html.encode('utf-8'),
-                    file_name=f"MacaoDaily_{today.strftime('%Y%m%d')}.html",
+                    file_name=f"MacaoDaily_{local_now.strftime('%Y%m%d_%H%M')}.html",
                     mime="text/html",
                     use_container_width=True
                 )
