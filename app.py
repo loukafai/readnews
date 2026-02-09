@@ -125,7 +125,8 @@ def start_multi_threaded_crawler(target_url, num_threads):
         return None
 
 # --- UI 介面 ---
-st.title("🇲🇴 澳門日報⚡極速下載器")
+st.title("🇲🇴 澳門日報⚡極速下載器 v0.5")
+st.info("💡 **提示：** 澳門日報網址通常為 https://www.macaodaily.com/html/2026-02/10/node_1.htm ")
 
 # 線程數選擇
 thread_count = st.slider("選擇並發線程數 (建議 4-8)", min_value=1, max_value=15, value=6)
