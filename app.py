@@ -94,52 +94,54 @@ def start_full_crawler(target_url):
         st.error(f"崩潰: {e}")
         return None
 
-# --- UI 介面 ---
-st.title("🇲🇴 澳門日報全版面下載器 v0.2")
 
-# 獲取今天日期
-today = datetime.date.today()
+
+# --- 1. 時間處理 (UTC+8) ---
+utc_now = datetime.datetime.utcnow()
+local_now = utc_now + datetime.timedelta(hours=8)
+today = local_now.date()
 formatted_date = today.strftime("%Y-%m/%d")
 today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
 
-# 建立功能區塊
-st.info(f"📅 今天的建議網址: {today_url}")
+# --- 2. UI 介面 ---
+st.title("🇲🇴 澳門日報全版面下載器 v0.3")
+st.caption(f"📅 伺服器偵測日期：{today} (UTC+8)")
 
 # 建立按鈕欄位
 col1, col2 = st.columns(2)
-
-target_url = "" # 用來接收最終要執行的網址
-trigger_start = False # 用來標記是否開始執行
+target_url = "" 
+trigger_start = False 
 
 with col1:
-    if st.button("📅 下載當天新聞", type="primary", use_container_width=True):
+    # 使用大紅色的按鈕吸引注意
+    if st.button("🔴 下載當天新聞", type="primary", use_container_width=True):
         target_url = today_url
         trigger_start = True
 
 with col2:
-    # 讓用戶也可以手動輸入
-    manual_url = st.text_input("或手動輸入網址:", placeholder="https://...", label_visibility="collapsed")
-    if st.button("🚀 開始分析手動網址", use_container_width=True):
+    # 讓用戶也可以手動輸入其他日期或版面
+    manual_url = st.text_input("輸入其他版面網址:", placeholder="https://...", label_visibility="collapsed")
+    if st.button("🔍 開始分析手動網址", use_container_width=True):
         target_url = manual_url
         trigger_start = True
 
-# --- 核心執行邏輯 ---
+# --- 3. 執行邏輯 ---
 if trigger_start:
     if target_url:
-        with st.spinner(f'正在解析: {target_url}'):
+        with st.spinner(f'正在爬取: {target_url}'):
+            # 這裡調用你之前的 start_full_crawler 函數
             result_html = start_full_crawler(target_url)
             
             if result_html:
-                st.success("✅ 生成完成！")
+                st.success(f"✅ {today} 報紙生成完成！")
                 st.balloons()
                 
-                # 下載按鈕
                 st.download_button(
-                    label="💾 點我儲存 HTML 檔案",
+                    label="💾 點我下載 HTML 存檔",
                     data=result_html.encode('utf-8'),
-                    file_name=f"MacaoDaily_{target_url.split('/')[-1].replace('.htm', '.html')}",
+                    file_name=f"MacaoDaily_{today.strftime('%Y%m%d')}.html",
                     mime="text/html",
                     use_container_width=True
                 )
     else:
-        st.warning("⚠️ 請輸入有效的網址。")
+        st.warning("請輸入網址或點擊下載按鈕。")
