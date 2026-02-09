@@ -94,48 +94,52 @@ def start_full_crawler(target_url):
         st.error(f"崩潰: {e}")
         return None
 
-
 # --- UI 介面 ---
-st.title("🇲🇴 澳門日報全版面下載器 v.0.2")
-st.info("您可以手動輸入網址，或點擊下方按鈕直接抓取今天的報紙。")
+st.title("🇲🇴 澳門日報全版面下載器 v0.2")
 
-# 1. 建立兩欄佈局，讓按鈕看起來更整齊
-col1, col2 = st.columns([1, 1])
+# 獲取今天日期
+today = datetime.date.today()
+formatted_date = today.strftime("%Y-%m/%d")
+today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
+
+# 建立功能區塊
+st.info(f"📅 今天的建議網址: {today_url}")
+
+# 建立按鈕欄位
+col1, col2 = st.columns(2)
+
+target_url = "" # 用來接收最終要執行的網址
+trigger_start = False # 用來標記是否開始執行
 
 with col1:
-    # 獲取今天日期的邏輯
-    today = datetime.date.today()
-    # 格式化為網址要求的樣式：YYYY-MM/DD
-    formatted_date = today.strftime("%Y-%m/%d")
-    today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
-    
-    if st.button("📅 下載當天新聞", use_container_width=True):
-        url_input = today_url # 重寫 url_input
-        st.session_state['run_url'] = today_url # 存入 session 觸發執行
+    if st.button("📅 下載當天新聞", type="primary", use_container_width=True):
+        target_url = today_url
+        trigger_start = True
 
 with col2:
-    if st.button("🧹 清除輸入", use_container_width=True):
-        st.session_state.pop('run_url', None)
+    # 讓用戶也可以手動輸入
+    manual_url = st.text_input("或手動輸入網址:", placeholder="https://...", label_visibility="collapsed")
+    if st.button("🚀 開始分析手動網址", use_container_width=True):
+        target_url = manual_url
+        trigger_start = True
 
-# 2. 手動輸入框（給予預設值或顯示自動生成的網址）
-default_val = st.session_state.get('run_url', today_url)
-url_to_process = st.text_input("版面網址:", value=default_val)
-
-# 3. 執行邏輯
-# 如果點擊了「下載當天新聞」或者手動點擊「開始分析」
-if st.button("🚀 開始分析並生成合輯", type="primary"):
-    if url_to_process:
-        with st.spinner(f'正在搬運 {url_to_process} 的內容...'):
-            result_html = start_full_crawler(url_to_process)
+# --- 核心執行邏輯 ---
+if trigger_start:
+    if target_url:
+        with st.spinner(f'正在解析: {target_url}'):
+            result_html = start_full_crawler(target_url)
             
             if result_html:
-                st.balloons() # 成功後噴花特效
-                html_bytes = result_html.encode('utf-8')
+                st.success("✅ 生成完成！")
+                st.balloons()
+                
+                # 下載按鈕
                 st.download_button(
-                    label="📥 點我儲存 HTML 合輯檔案",
-                    data=html_bytes,
-                    file_name=f"MacaoDaily_{today.strftime('%Y%m%d')}.html",
-                    mime="text/html"
+                    label="💾 點我儲存 HTML 檔案",
+                    data=result_html.encode('utf-8'),
+                    file_name=f"MacaoDaily_{target_url.split('/')[-1].replace('.htm', '.html')}",
+                    mime="text/html",
+                    use_container_width=True
                 )
     else:
-        st.warning("請先輸入網址或點擊當天按鈕")
+        st.warning("⚠️ 請輸入有效的網址。")
