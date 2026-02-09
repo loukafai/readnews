@@ -4,13 +4,57 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import re
 import time
-import io
 import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 設定網頁資訊
-st.set_page_config(page_title="澳門日報下載器", page_icon="🇲🇴")
+st.set_page_config(page_title="澳門日報多線程下載器", page_icon="⚡")
 
-def start_full_crawler(target_url):
+def fetch_single_article(i, link, headers):
+    """單篇文章抓取邏輯，供線程池調用"""
+    try:
+        r = requests.get(link, headers=headers, timeout=15)
+        r.encoding = 'utf-8'
+        raw_html = r.text
+
+        # 提取標題 (Founder Tag)
+        title_match = re.search(r'<founder-title>(.*?)</founder-title>', raw_html, re.DOTALL)
+        final_title = title_match.group(1).strip() if title_match else "無標題"
+        final_title = final_title.replace('<![CDATA[', '').replace(']]>', '')
+
+        a_soup = BeautifulSoup(raw_html, 'html.parser')
+        
+        # 處理圖片
+        imgs_html = ""
+        for img in a_soup.find_all('img'):
+            src = img.get('src')
+            if src and '/res/' in src:
+                full_img_url = urljoin(link, src)
+                imgs_html += f'<img src="{full_img_url}" class="news-image">'
+
+        # 處理正文
+        content_div = a_soup.find(id="ozoom")
+        content_html = str(content_div) if content_div else "<p>（內文擷取失敗）</p>"
+
+        # 組裝該篇 HTML 片段
+        anchor_id = f"news_{i}"
+        article_piece = f"""
+        <div class="article-card" id="{anchor_id}">
+            <div class="news-title">{final_title}</div>
+            <div class="source-url">
+                <b>🔗 來源連結：</b><a href="{link}" target="_blank">{link}</a>
+            </div>
+            <hr>
+            {imgs_html}
+            <div class="content-body">{content_html}</div>
+        </div>
+        """
+        # 返回索引、標題、片段，以便後續按順序排序
+        return (i, final_title, anchor_id, article_piece)
+    except Exception as e:
+        return (i, f"抓取失敗: {link}", f"error_{i}", f"<p>錯誤: {str(e)}</p>")
+
+def start_multi_threaded_crawler(target_url, num_threads):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0"
     }
@@ -20,7 +64,7 @@ def start_full_crawler(target_url):
         res.encoding = 'utf-8'
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 提取文章連結
+        # 1. 提取所有文章連結
         links = []
         for a in soup.find_all('a', href=True):
             if 'content_' in a['href']:
@@ -30,18 +74,35 @@ def start_full_crawler(target_url):
         total = len(article_links)
         
         if total == 0:
-            st.error("❌ 找不到文章連結，請檢查網址。")
+            st.error("❌ 找不到文章連結。")
             return None
 
-        # 準備進度條
+        # 2. 開始併發抓取
         progress_bar = st.progress(0)
         status_text = st.empty()
+        status_text.text(f"🚀 啟動 {num_threads} 線程處理中...")
 
-        # 檔名處理
+        results = []
+        # 使用 ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            # 提交任務
+            future_to_url = {executor.submit(fetch_single_article, i, link, headers): i for i, link in enumerate(article_links)}
+            
+            completed_count = 0
+            for future in as_completed(future_to_url):
+                res_data = future.result()
+                results.append(res_data)
+                completed_count += 1
+                progress_bar.progress(completed_count / total)
+                status_text.text(f"已完成: {completed_count}/{total}")
+
+        # 3. 按原始順序排序（線程返回順序是亂的，需按索引排序）
+        results.sort(key=lambda x: x[0])
+
+        # 4. 組合 HTML
         date_match = re.search(r'(\d{4}-\d{2}/\d{2})', target_url)
         date_id = date_match.group(1).replace('-', '').replace('/', '') if date_match else "Archive"
 
-        # HTML 模板 - 加入來源網址的 CSS
         html_start = f"""<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
         <style>
             body {{ font-family: sans-serif; line-height: 1.8; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f4; }}
@@ -53,71 +114,25 @@ def start_full_crawler(target_url):
             #toc {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ddd; }}
         </style></head><body><h1>澳門日報合輯 ({date_id})</h1><div id="toc"><h3>📋 目錄</h3>"""
 
-        toc_html = ""
-        articles_body = ""
+        toc_html = "".join([f'<a href="#{r[2]}" style="display:block;margin:5px 0;text-decoration:none;color:#0056b3;">{r[0]+1}. {r[1]}</a>' for r in results])
+        articles_body = "".join([r[3] for r in results])
 
-        for i, link in enumerate(article_links):
-            try:
-                status_text.text(f"正在處理 ({i+1}/{total}): {link.split('/')[-1]}")
-                r = requests.get(link, headers=headers, timeout=10)
-                r.encoding = 'utf-8'
-                raw_html = r.text
-
-                # 方正標籤提取標題
-                title_match = re.search(r'<founder-title>(.*?)</founder-title>', raw_html, re.DOTALL)
-                final_title = title_match.group(1).strip() if title_match else "無標題"
-                final_title = final_title.replace('<![CDATA[', '').replace(']]>', '')
-
-                a_soup = BeautifulSoup(raw_html, 'html.parser')
-                
-                imgs_html = ""
-                for img in a_soup.find_all('img'):
-                    src = img.get('src')
-                    if src and '/res/' in src:
-                        full_img_url = urljoin(link, src)
-                        imgs_html += f'<img src="{full_img_url}" class="news-image">'
-
-                content_div = a_soup.find(id="ozoom")
-                content_html = str(content_div) if content_div else "<p>（內文擷取失敗）</p>"
-
-                anchor_id = f"news_{i}"
-                toc_html += f'<a href="#{anchor_id}" style="display:block;margin:5px 0;text-decoration:none;color:#0056b3;">{i+1}. {final_title}</a>'
-                
-                # --- 修正處：加入來源連結區塊 ---
-                articles_body += f"""
-                <div class="article-card" id="{anchor_id}">
-                    <div class="news-title">{final_title}</div>
-                    <div class="source-url">
-                        <b>🔗 來源連結：</b><a href="{link}" target="_blank">{link}</a>
-                    </div>
-                    <hr>
-                    {imgs_html}
-                    <div class="content-body">{content_html}</div>
-                </div>
-                """
-                
-                progress_bar.progress((i + 1) / total)
-                time.sleep(0.1)
-            except:
-                continue
-
-        status_text.text("✨ 處理完成！請點擊下方按鈕下載。")
+        status_text.text("✨ 多線程抓取完成！")
         return html_start + toc_html + "</div>" + articles_body + "</body></html>"
 
     except Exception as e:
         st.error(f"崩潰: {e}")
         return None
 
-# --- 1. 時間處理 (UTC+8) ---
-# 注意：Streamlit Cloud 通常運行在 UTC 時間
-local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-today = local_now.date()
-formatted_date = today.strftime("%Y-%m/%d")
-today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
+# --- UI 介面 ---
+st.title("🇲🇴 澳門日報⚡極速下載器")
 
-# --- 2. UI 介面 ---
-st.title("🇲🇴 澳門日報全版面下載器 v0.4")
-st.caption(f"📅 當前時間：{local_now.strftime('%Y-%m-%d %H:%M:%S')} (UTC+8)")
+# 線程數選擇
+thread_count = st.slider("選擇並發線程數 (建議 4-8)", min_value=1, max_value=15, value=6)
+
+local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+formatted_date = local_now.strftime("%Y-%m/%d")
+today_url = f"https://www.macaodaily.com/html/{formatted_date}/node_1.htm"
 
 col1, col2 = st.columns(2)
 target_url = "" 
@@ -129,27 +144,21 @@ with col1:
         trigger_start = True
 
 with col2:
-    manual_url = st.text_input("或輸入其他版面網址:", placeholder="https://...", label_visibility="collapsed")
-    if st.button("🔍 開始分析手動網址", use_container_width=True):
+    manual_url = st.text_input("輸入版面網址:", placeholder="https://...", label_visibility="collapsed")
+    if st.button("🔍 開始分析", use_container_width=True):
         target_url = manual_url
         trigger_start = True
 
-# --- 3. 執行邏輯 ---
 if trigger_start:
     if target_url:
-        with st.spinner(f'正在爬取: {target_url}'):
-            result_html = start_full_crawler(target_url)
-            
+        with st.spinner('極速抓取中...'):
+            result_html = start_multi_threaded_crawler(target_url, thread_count)
             if result_html:
                 st.success(f"✅ 生成完成！")
-                st.balloons()
-                
                 st.download_button(
                     label="💾 點我下載 HTML 存檔",
                     data=result_html.encode('utf-8'),
-                    file_name=f"MacaoDaily_{local_now.strftime('%Y%m%d_%H%M')}.html",
+                    file_name=f"MacaoDaily_{local_now.strftime('%Y%m%d')}.html",
                     mime="text/html",
                     use_container_width=True
                 )
-    else:
-        st.warning("請輸入網址或點擊下載按鈕。")
