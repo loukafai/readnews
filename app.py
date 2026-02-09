@@ -88,3 +88,27 @@ def start_full_crawler(target_url):
 
         status_text.text("✨ 處理完成！請點擊下方按鈕下載。")
         return html_start + toc_html + "</div>" + articles_body + "</body></html>"
+
+    except Exception as e:
+        st.error(f"崩潰: {e}")
+        return None
+
+# --- UI 介面 ---
+st.title("🇲🇴 澳門日報全版面下載器 v0.1")
+st.info("請輸入當天某一版的 node 網址，程式會自動抓取該版整頁內容。")
+
+url_input = st.text_input("版面網址:", value="https://www.macaodaily.com/html/2026-02/10/node_1.htm")
+
+if st.button("🚀 開始分析並生成合輯"):
+    with st.spinner('正在搬運中，請稍候...'):
+        result_html = start_full_crawler(url_input)
+        
+        if result_html:
+            # 將結果轉為可下載的 byte 流
+            html_bytes = result_html.encode('utf-8')
+            st.download_button(
+                label="📥 下載 HTML 合輯檔案",
+                data=html_bytes,
+                file_name="MacaoDaily_Export.html",
+                mime="text/html"
+            )
