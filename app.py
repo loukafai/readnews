@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import re
 import time
 import datetime
+import base64  # 必須加入這個導入
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 設定網頁資訊
@@ -125,7 +126,7 @@ def start_multi_threaded_crawler(target_url, num_threads):
         return None
 
 # --- UI 介面 ---
-st.title("🇲🇴 澳門日報⚡極速下載器 v0.5")
+st.title("🇲🇴 澳門日報⚡極速下載器 v0.6")
 st.info("💡 **提示：** 澳門日報網址通常為 https://www.macaodaily.com/html/2026-02/10/node_1.htm ")
 
 # 線程數選擇
@@ -156,6 +157,8 @@ if trigger_start:
             result_html = start_multi_threaded_crawler(target_url, thread_count)
             if result_html:
                 st.success(f"✅ 生成完成！")
+                
+                # --- 1. 下載按鈕 ---
                 st.download_button(
                     label="💾 點我下載 HTML 存檔",
                     data=result_html.encode('utf-8'),
@@ -163,3 +166,32 @@ if trigger_start:
                     mime="text/html",
                     use_container_width=True
                 )
+
+                # --- 2. 新分頁預覽按鈕邏輯 ---
+                # 將 HTML 內容轉換為 Base64 以便透過 URL 開啟
+                b64_html = base64.b64encode(result_html.encode('utf-8')).decode('utf-8')
+                preview_url = f"data:text/html;base64,{b64_html}"
+                
+                # 使用 HTML 注入自定義按鈕樣式
+                preview_button_html = f"""
+                    <a href="{preview_url}" target="_blank" style="text-decoration: none;">
+                        <div style="
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background-color: #ffffff;
+                            color: #ff4b4b;
+                            border: 1px solid #ff4b4b;
+                            padding: 10px 20px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 500;
+                            margin-top: 10px;
+                            transition: all 0.3s;
+                            text-align: center;
+                        " onmouseover="this.style.backgroundColor='#fff5f5'" onmouseout="this.style.backgroundColor='#ffffff'">
+                            🌐 直接在新分頁開啟查看 (免下載)
+                        </div>
+                    </a>
+                """
+                st.markdown(preview_button_html, unsafe_allow_html=True)
