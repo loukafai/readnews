@@ -6,6 +6,7 @@ import re
 import time
 import datetime
 import base64  # 必須加入這個導入
+import streamlit.components.v1 as components # 確保導入此套件
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 設定網頁資訊
@@ -126,7 +127,7 @@ def start_multi_threaded_crawler(target_url, num_threads):
         return None
 
 # --- UI 介面 ---
-st.title("🇲🇴 澳門日報⚡極速下載器 v0.6")
+st.title("🇲🇴 澳門日報⚡極速下載器 v0.6.1")
 st.info("💡 **提示：** 澳門日報網址通常為 https://www.macaodaily.com/html/2026-02/10/node_1.htm ")
 
 # 線程數選擇
@@ -158,7 +159,7 @@ if trigger_start:
             if result_html:
                 st.success(f"✅ 生成完成！")
                 
-                # --- 1. 下載按鈕 ---
+                # 1. 下載按鈕
                 st.download_button(
                     label="💾 點我下載 HTML 存檔",
                     data=result_html.encode('utf-8'),
@@ -167,31 +168,33 @@ if trigger_start:
                     use_container_width=True
                 )
 
-                # --- 2. 新分頁預覽按鈕邏輯 ---
-                # 將 HTML 內容轉換為 Base64 以便透過 URL 開啟
-                b64_html = base64.b64encode(result_html.encode('utf-8')).decode('utf-8')
-                preview_url = f"data:text/html;base64,{b64_html}"
+                # --- 修正後的預覽邏輯：使用 JavaScript Blob ---
+                # 轉義 HTML 中的引號以避免 JS 報錯
+                escaped_html = result_html.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
                 
-                # 使用 HTML 注入自定義按鈕樣式
-                preview_button_html = f"""
-                    <a href="{preview_url}" target="_blank" style="text-decoration: none;">
-                        <div style="
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            background-color: #ffffff;
-                            color: #ff4b4b;
-                            border: 1px solid #ff4b4b;
-                            padding: 10px 20px;
-                            border-radius: 8px;
-                            cursor: pointer;
-                            font-weight: 500;
-                            margin-top: 10px;
-                            transition: all 0.3s;
-                            text-align: center;
-                        " onmouseover="this.style.backgroundColor='#fff5f5'" onmouseout="this.style.backgroundColor='#ffffff'">
-                            🌐 直接在新分頁開啟查看 (免下載)
-                        </div>
-                    </a>
+                js_code = f"""
+                <script>
+                function openInNewTab() {{
+                    const htmlContent = `{escaped_html}`;
+                    const blob = new Blob([htmlContent], {{ type: 'text/html' }});
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                }}
+                </script>
+                <button onclick="openInNewTab()" style="
+                    width: 100%;
+                    background-color: white;
+                    color: #ff4b4b;
+                    border: 1px solid #ff4b4b;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    margin-top: 10px;
+                    font-size: 16px;
+                ">
+                    🌐 直接在新分頁開啟查看 (免下載)
+                </button>
                 """
-                st.markdown(preview_button_html, unsafe_allow_html=True)
+                # 使用 components.html 嵌入這個按鈕
+                components.html(js_code, height=70)
